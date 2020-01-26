@@ -73,6 +73,8 @@ App {
 
     Component.onCompleted: {
         parseJson("../assets/delusions_midi_right.json", "../assets/delusions_midi_left.json")
+        // example if there is one file only
+//        parseJson("../assets/delusions_midi.json", "")
         loaded = true
     }
 
@@ -110,7 +112,10 @@ App {
         var fileLeft = fileUtils.readFile(Qt.resolvedUrl(filePathLeft))
 
         var midiRight = JSON.parse(fileRight)
-        var midiLeft = JSON.parse(fileLeft)
+        var midiLeft = {}
+        if(filePathLeft !== "") {
+            midiLeft = JSON.parse(fileLeft)
+        }
 
         var ppq = midiRight.header.ppq
 
@@ -151,20 +156,22 @@ App {
     }
 
     function convertNotes(right, midi, notes, quaverTicks) {
-        for(var i = 0; i < midi.tracks[0].notes.length; i++) {
-            var note = midi.tracks[0].notes[i]
-            var startIdx = Math.round(note.ticks / quaverTicks) + 1
-            var endIdx = startIdx + Math.ceil(note.durationTicks / quaverTicks)
-            var octave = Math.floor(note.midi / 12)
+        if(midi.tracks) {
+            for(var i = 0; i < midi.tracks[0].notes.length; i++) {
+                var note = midi.tracks[0].notes[i]
+                var startIdx = Math.round(note.ticks / quaverTicks) + 1
+                var endIdx = startIdx + Math.ceil(note.durationTicks / quaverTicks)
+                var octave = Math.floor(note.midi / 12)
 
-            // "C" starts at 1 and not 0 (because no note is 0)
-            var key = note.midi % 12
-            if(right) {
-                key += 12
-            }
+                // "C" starts at 1 and not 0 (because no note is 0)
+                var key = note.midi % 12
+                if(right) {
+                    key += 12
+                }
 
-            for(var idx = startIdx; idx < endIdx; idx++) {
-                notes[idx][octave] = notes[idx][octave] | 1<<key
+                for(var idx = startIdx; idx < endIdx; idx++) {
+                    notes[idx][octave] = notes[idx][octave] | 1<<key
+                }
             }
         }
 
