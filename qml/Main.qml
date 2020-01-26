@@ -10,6 +10,11 @@ App {
     property int time: 0
     property int timerInterval
     property int numOctaves: 9
+    property real shortestNote: 0.5 // the shortest note allowed is a quaver
+    property var tempo: {
+        "tempos": [],
+        "currentIdx": 0,
+    }
     property var notes: {
         "notes": []
     }
@@ -21,19 +26,19 @@ App {
     Row {
         anchors.centerIn: parent
         Repeater {
-            model: 88
+            model: 89
             Item {
                 property int octave: Math.floor(index / 12)
                 property bool blackKey: index%12 === 1 || index%12 === 3 || index%12 === 6 || index%12 === 8 || index%12 === 10
                 property var normalColor: blackKey ? "black" : "white"
-                property var pressedColor: blackKey ? "grey" : "grey"
-                width: blackKey ? 0.001 : keyWidth
+                property var pressedColor: blackKey ? "#aaaaaa" : "grey"
+                width: blackKey ? 0.001 : keyWidth // if the width is 0, then it is not rendered at all, so make it 0.001
                 height: blackKey ? keyHeight * 0.6 : keyHeight
                 z: blackKey ? 2 : 1
                 visible: octave > 1
                 Rectangle {
                     x: blackKey ? -width / 2 : 0
-                    width: blackKey ? keyWidth * 0.8 : keyWidth
+                    width: blackKey ? keyWidth * 0.7 : keyWidth
                     height: parent.height
                     color: loaded ? (notes[time][octave] & Math.pow(2, (index%12 + 1))) > 0 ? pressedColor : normalColor : normalColor
                     border.color: "black"
@@ -74,10 +79,15 @@ App {
     Timer {
         id: timer
         repeat: true
-        interval: timerInterval
+        interval: loaded ? 60 / tempo.tempos[tempo.currentIdx].bpm * shortestNote * 1000 : 0
         running: playing
-        onTriggered: time++
-
+        onTriggered: {
+            time++
+            if(tempo.currentIdx+1 < tempo.tempos.length && time > tempo.tempos[tempo.currentIdx+1].noteIdx) {
+                tempo.currentIdx += 1
+                tempoChanged()
+            }
+        }
     }
 
     function start() {
@@ -98,9 +108,7 @@ App {
         var bpm = 180
 
         // the number of ticks for one quaver - the smallest duration interval
-        var quaverTicks = ppq * 0.5
-
-        app.timerInterval = 60 / 180 * 0.5 * 1000
+        var quaverTicks = ppq * shortestNote
 
         var nNotes = midi.tracks[0].notes.length
         // assumes last note in the file is also the last note to release
@@ -131,6 +139,18 @@ App {
             }
         }
 
+        // get the tempo info
+        var midiTempos = midi.header.tempos
+        var convertedTempos = []
+        for(i = 0; i < midiTempos.length; i++) {
+            convertedTempos.push({
+                                     "bpm": midiTempos[i].bpm,
+                                     "noteIdx": Math.floor(midiTempos[i].ticks / quaverTicks)
+                                 }
+                                 )
+        }
+
         app.notes = notes
+        app.tempo.tempos = convertedTempos
     }
 }
