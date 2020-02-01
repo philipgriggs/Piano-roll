@@ -4,8 +4,8 @@ import QtMultimedia 5.12
 
 App {
     id: app
-    width: 480
-    height: 320
+    width: 1600
+    height: 640
 
     property int time: 0
     property int timerInterval
@@ -20,19 +20,26 @@ App {
     }
     property bool loaded
     property bool playing
-    property real keyWidth: (app.width - 10) / (88 - 44)
+    property real keyWidth: app.width / (88 * 7 / 12)
     property real keyHeight: keyWidth * 3
+
+    Rectangle {
+        anchors.fill: parent
+        color: "white"
+    }
 
     Row {
         anchors.centerIn: parent
         Repeater {
-            model: 89
+            model: 88 + 9
             Item {
+                id: keyContainer
                 property int octave: Math.floor(index / 12)
                 property bool blackKey: index%12 === 1 || index%12 === 3 || index%12 === 6 || index%12 === 8 || index%12 === 10
                 property int leftKey: 1 << index%12
                 property int rightKey: leftKey << 12
                 property int bothKeys: leftKey | rightKey
+                property bool pressed: (notes[time][octave] & bothKeys) > 0
                 property string normalColor: blackKey ? "black" : "white"
                 property string rightPressedColor: blackKey ? "#8bc1ff" : "#8bc1ff"
                 property string leftPressedColor: blackKey ? "#d08585" : "#d08585"
@@ -40,15 +47,38 @@ App {
                 width: blackKey ? 0.001 : keyWidth // if the width is 0, then it is not rendered at all, so make it 0.001
                 height: blackKey ? keyHeight * 0.6 : keyHeight
                 z: blackKey ? 2 : 1
-                visible: octave > 1
-                Rectangle {
-                    x: blackKey ? -width / 2 : 0
-                    width: blackKey ? keyWidth * 0.7 : keyWidth
+                visible: index > 20
+                Item {
+                    id: keyClipper
+                    width: keyContainer.blackKey ? keyWidth * 0.7 : keyWidth
                     height: parent.height
-                    color: loaded && (notes[time][octave] & parent.bothKeys) > 0 ? pressedColor : normalColor
-                    border.color: "black"
-                    border.width: 1
-                    radius: 1
+                    x: keyContainer.blackKey ? -width / 2 : 0
+                    clip: true
+                    Rectangle {
+                        id: key
+                        y: -height / 2
+                        width: parent.width
+                        height: keyContainer.height * 2
+                        color: loaded && keyContainer.pressed ? keyContainer.pressedColor : keyContainer.normalColor
+                        border.color: "black"
+                        border.width: 1
+                        radius: dp(5)
+                    }
+                    Rectangle {
+                        id: topBorder
+                        color: "black"
+                        width: parent.width
+                        height: 1
+                    }
+                    PolygonItem {
+                        id: shadow
+                        width: parent.width
+                        height: parent.height
+                        fill: true
+                        color: keyContainer.blackKey ? "white" : "grey"
+                        opacity: keyContainer.blackKey && !keyContainer.pressed ? 0.18 : 0
+                        vertices: [Qt.point(shadow.width / 1.7 , shadow.height), Qt.point(shadow.width, shadow.height), Qt.point(shadow.width, 0), Qt.point(shadow.width * 0.8, 0)]
+                    }
                 }
             }
         }

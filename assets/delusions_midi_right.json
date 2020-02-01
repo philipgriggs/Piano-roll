@@ -3871,6 +3871,15 @@
         {
           "duration": 0.1854575812500059,
           "durationTicks": 227,
+          "midi": 56,
+          "name": "G#3",
+          "ticks": 103440,
+          "time": 74.74353925,
+          "velocity": 0.6299212598425197
+        },
+        {
+          "duration": 0.1854575812500059,
+          "durationTicks": 227,
           "midi": 61,
           "name": "C#4",
           "ticks": 103440,
