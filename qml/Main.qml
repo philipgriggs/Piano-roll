@@ -10,7 +10,7 @@ App {
     property int time: 0
     property int timerInterval
     property int numOctaves: 9
-    property real shortestNote: 0.5 // the shortest note allowed is a quaver
+    property real shortestNote: 0.125 // the shortest note allowed is a demisemiquaver
     property var tempo: {
         "tempos": [],
         "currentIdx": 0,
@@ -102,7 +102,7 @@ App {
     }
 
     Component.onCompleted: {
-        parseJson("../assets/delusions/delusions_midi_right.json", "../assets/delusions/delusions_midi_left.json")
+        parseJson("../assets/congratulations/congratulations_right.json", "../assets/congratulations/congratulations_left.json")
         // example if there is one file only
 //        parseJson("../assets/delusions/delusions_midi.json", "")
         loaded = true
@@ -110,7 +110,8 @@ App {
 
     MediaPlayer {
         id: track
-        source: "../assets/delusions/delusions.mp3"
+        source: "../assets/congratulations/congratulations.mp3"
+        volume: 0
     }
 
     Timer {
@@ -149,7 +150,7 @@ App {
 
         var ppq = midiRight.header.ppq
 
-        // the number of ticks for one quaver - the smallest duration interval
+        // the number of ticks for one demisemiquaver - the smallest duration interval
         var quaverTicks = ppq * shortestNote
 
         var nNotes = midiRight.tracks[0].notes.length
@@ -191,6 +192,12 @@ App {
                 var note = midi.tracks[0].notes[i]
                 var startIdx = Math.round(note.ticks / quaverTicks) + 1
                 var endIdx = startIdx + Math.ceil(note.durationTicks / quaverTicks)
+                // if the note is longer than 1 bucket then cut it short by 1
+                // this is in case it is the same note as the previous one and it shows as 2 notes
+                if (endIdx > startIdx + 1) {
+                    endIdx--
+                }
+
                 var octave = Math.floor(note.midi / 12)
 
                 // "C" starts at 1 and not 0 (because no note is 0)
