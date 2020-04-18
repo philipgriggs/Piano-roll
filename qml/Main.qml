@@ -102,15 +102,15 @@ App {
     }
 
     Component.onCompleted: {
-        parseJson("../assets/delusions_midi_right.json", "../assets/delusions_midi_left.json")
+        parseJson("../assets/delusions/delusions_midi_right.json", "../assets/delusions/delusions_midi_left.json")
         // example if there is one file only
-//        parseJson("../assets/delusions_midi.json", "")
+//        parseJson("../assets/delusions/delusions_midi.json", "")
         loaded = true
     }
 
     MediaPlayer {
         id: track
-        source: "../assets/delusions.mp3"
+        source: "../assets/delusions/delusions.mp3"
     }
 
     Timer {
