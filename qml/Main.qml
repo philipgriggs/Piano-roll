@@ -4,8 +4,10 @@ import QtMultimedia 5.12
 
 App {
     id: app
-    width: 1600
-    height: 640
+    width: useVideo ? 1920 * 0.85 : 1600
+    height: useVideo ? 1080 * 0.85 : 640
+
+    property bool useVideo: true
 
     property int time: 0
     property int timerInterval
@@ -26,10 +28,32 @@ App {
     Rectangle {
         anchors.fill: parent
         color: "white"
+        focus: true
+        Keys.onSpacePressed: {
+            if (playing) {
+                pause()
+            } else {
+                start()
+            }
+        }
+    }
+
+    Video {
+        id: video
+        visible: useVideo
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: -height * 0.05
+        width: parent.width * 0.95
+        height: parent.height
+        source: "../assets/congratulations/congratulations.mov"
     }
 
     Row {
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: useVideo ? null : parent.verticalCenter
+        anchors.bottom: useVideo ? parent.bottom : null
+        anchors.bottomMargin: useVideo ? 0.1 * parent.height : 0
         Repeater {
             model: 88 + 9
             Item {
@@ -85,6 +109,7 @@ App {
     }
 
     Icon {
+        visible: !useVideo
         icon: playing ? IconType.pause : IconType.play
         anchors.horizontalCenter: parent.horizontalCenter
         size: 50
@@ -111,7 +136,6 @@ App {
     MediaPlayer {
         id: track
         source: "../assets/congratulations/congratulations.mp3"
-        volume: 0
     }
 
     Timer {
@@ -131,11 +155,13 @@ App {
     function start() {
         playing = true
         track.play()
+        video.play()
     }
 
     function pause() {
         playing = false
         track.pause()
+        video.pause()
     }
 
     function parseJson(filePathRight, filePathLeft) {
@@ -188,16 +214,15 @@ App {
 
     function convertNotes(right, midi, notes, quaverTicks) {
         if(midi.tracks) {
+            var releaseNote = 1 << 25
+            if(right) {
+                releaseNote = 1 << 26
+            }
+
             for(var i = 0; i < midi.tracks[0].notes.length; i++) {
                 var note = midi.tracks[0].notes[i]
                 var startIdx = Math.round(note.ticks / quaverTicks) + 1
                 var endIdx = startIdx + Math.ceil(note.durationTicks / quaverTicks)
-                // if the note is longer than 1 bucket then cut it short by 1
-                // this is in case it is the same note as the previous one and it shows as 2 notes
-                if (endIdx > startIdx + 1) {
-                    endIdx--
-                }
-
                 var octave = Math.floor(note.midi / 12)
 
                 // "C" starts at 1 and not 0 (because no note is 0)
@@ -208,10 +233,57 @@ App {
 
                 for(var idx = startIdx; idx < endIdx; idx++) {
                     notes[idx][octave] = notes[idx][octave] | 1<<key
+
+                    if (idx === endIdx-1) {
+                        notes[idx][octave] = notes[idx][octave] | (releaseNote)
+                    }
+                }                
+            }
+
+            notes = deleteReleasedNotes(notes, right, releaseNote)
+        }
+
+        return notes
+    }
+
+    // if the same note is played twice in successive buckets, then it won't show as being released
+    // so delete successive notes if they are marked with the 'release' flag
+    function deleteReleasedNotes(notes, right, releaseNote) {
+        var clear = (1<<24) - 1 - ((1<<12) - 1)
+        var keep = (1<<12) - 1
+        if (right) {
+            clear = (1<<12) - 1
+            keep = (1<<24) - 1 - ((1<<12) - 1)
+        }
+        for(var i = 1; i < notes.length - 1; i++) {
+            var notesSumCurr = 0
+            var isReleaseNote = false
+            for(var oct = 0; oct < numOctaves; oct++) {
+                notesSumCurr += (notes[i][oct] & ~(releaseNote) & keep)
+                if((notes[i][oct] & releaseNote) > 0) {
+                    isReleaseNote = true
+                }
+            }
+
+            if(!isReleaseNote) continue
+
+            var notesSumPrev = 0
+            for(oct = 0; oct < numOctaves; oct++) {
+                notesSumPrev += notes[i-1][oct] & keep
+            }
+
+
+            var notesSumNext = 0
+            for(oct = 0; oct < numOctaves; oct++) {
+                notesSumNext += notes[i+1][oct] & keep
+            }
+
+            if(notesSumCurr === notesSumPrev && notesSumCurr === notesSumNext) {
+                for(oct = 0; oct < numOctaves; oct++) {
+                    notes[i][oct] = notes[i][oct] & clear
                 }
             }
         }
-
         return notes
     }
 }
