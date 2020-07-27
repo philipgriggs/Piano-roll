@@ -25,6 +25,11 @@ App {
     property real keyWidth: app.width / (88 * 7 / 12)
     property real keyHeight: keyWidth * 3
 
+    property string handLeft: "left"
+    property string handRight: "right"
+    property string releaseLeft: "leftRelease"
+    property string releaseRight: "rightRelease"
+
     Rectangle {
         anchors.fill: parent
         color: "white"
@@ -60,14 +65,12 @@ App {
                 id: keyContainer
                 property int octave: Math.floor(index / 12)
                 property bool blackKey: index%12 === 1 || index%12 === 3 || index%12 === 6 || index%12 === 8 || index%12 === 10
-                property int leftKey: 1 << index%12
-                property int rightKey: leftKey << 12
-                property int bothKeys: leftKey | rightKey
-                property bool pressed: (notes[time][octave] & bothKeys) > 0
+                property int key: 1 << index%12
+                property bool pressed: ((notes[time][octave][app.handLeft] | notes[time][octave][app.handRight]) & keyContainer.key) > 0
                 property string normalColor: blackKey ? "black" : "white"
                 property string rightPressedColor: blackKey ? "#8bc1ff" : "#8bc1ff"
                 property string leftPressedColor: blackKey ? "#d08585" : "#d08585"
-                property string pressedColor: loaded && (notes[time][octave] & rightKey) > 0 ? rightPressedColor : leftPressedColor
+                property string pressedColor: loaded && (notes[time][octave][app.handRight] & keyContainer.key) > 0 ? rightPressedColor : leftPressedColor
                 width: blackKey ? 0.001 : keyWidth // if the width is 0, then it is not rendered at all, so make it 0.001
                 height: blackKey ? keyHeight * 0.6 : keyHeight
                 z: blackKey ? 2 : 1
@@ -146,7 +149,7 @@ App {
         onTriggered: {
             time++
             if(tempo.currentIdx+1 < tempo.tempos.length && time > tempo.tempos[tempo.currentIdx+1].noteIdx) {
-                tempo.currentIdx += 1
+                tempo.currentIdx++
                 tempoChanged()
             }
         }
@@ -190,8 +193,12 @@ App {
         for(var i = 0; i < notes.length; i++) {
             // each item in notes is one octave of notes, and 8 octaves for the whole range of notes
             notes[i] = new Array(numOctaves)
-            for(var j = 0; j < numOctaves; j++) {
-                notes[i][j] = 0
+            for(var oct = 0; oct < numOctaves; oct++) {
+                notes[i][oct] = {}
+                notes[i][oct][app.handLeft] = 0
+                notes[i][oct][app.handRight] = 0
+                notes[i][oct][app.releaseLeft] = 0
+                notes[i][oct][app.releaseRight] = 0
             }
         }
 
@@ -214,9 +221,11 @@ App {
 
     function convertNotes(right, midi, notes, quaverTicks) {
         if(midi.tracks) {
-            var releaseNote = 1 << 25
+            var hand = app.handLeft
+            var release = app.releaseLeft
             if(right) {
-                releaseNote = 1 << 26
+                hand = app.handRight
+                release = app.releaseRight
             }
 
             for(var i = 0; i < midi.tracks[0].notes.length; i++) {
@@ -227,20 +236,17 @@ App {
 
                 // "C" starts at 1 and not 0 (because no note is 0)
                 var key = note.midi % 12
-                if(right) {
-                    key += 12
-                }
 
                 for(var idx = startIdx; idx < endIdx; idx++) {
-                    notes[idx][octave] = notes[idx][octave] | 1<<key
+                    notes[idx][octave][hand] = notes[idx][octave][hand] | 1<<key
 
                     if (idx === endIdx-1) {
-                        notes[idx][octave] = notes[idx][octave] | (releaseNote)
+                        notes[idx][octave][release] = notes[idx][octave][release] | 1<<key
                     }
                 }                
             }
 
-            notes = deleteReleasedNotes(notes, right, releaseNote)
+            notes = deleteReleasedNotes(notes, right)
         }
 
         return notes
@@ -248,39 +254,19 @@ App {
 
     // if the same note is played twice in successive buckets, then it won't show as being released
     // so delete successive notes if they are marked with the 'release' flag
-    function deleteReleasedNotes(notes, right, releaseNote) {
-        var clear = (1<<24) - 1 - ((1<<12) - 1)
-        var keep = (1<<12) - 1
-        if (right) {
-            clear = (1<<12) - 1
-            keep = (1<<24) - 1 - ((1<<12) - 1)
+    function deleteReleasedNotes(notes, right) {
+        var hand = app.handLeft
+        var release = app.releaseLeft
+        if(right) {
+            hand = app.handRight
+            release = app.releaseRight
         }
-        for(var i = 1; i < notes.length - 1; i++) {
-            var notesSumCurr = 0
-            var isReleaseNote = false
+        for(var i = 1; i < notes.length - 1; i++) {            
             for(var oct = 0; oct < numOctaves; oct++) {
-                notesSumCurr += (notes[i][oct] & ~(releaseNote) & keep)
-                if((notes[i][oct] & releaseNote) > 0) {
-                    isReleaseNote = true
-                }
-            }
-
-            if(!isReleaseNote) continue
-
-            var notesSumPrev = 0
-            for(oct = 0; oct < numOctaves; oct++) {
-                notesSumPrev += notes[i-1][oct] & keep
-            }
-
-
-            var notesSumNext = 0
-            for(oct = 0; oct < numOctaves; oct++) {
-                notesSumNext += notes[i+1][oct] & keep
-            }
-
-            if(notesSumCurr === notesSumPrev && notesSumCurr === notesSumNext) {
-                for(oct = 0; oct < numOctaves; oct++) {
-                    notes[i][oct] = notes[i][oct] & clear
+                // if it is the same note 3 buckets in a row and the middle one is a release, then delete the middle note
+                // this is because we don't want to delete a note if it is only 1 interval in duration
+                if((notes[i-1][oct][hand] & notes[i][oct][hand] & notes[i+1][oct][hand] & notes[i][oct][release]) > 0) {
+                    notes[i][oct][hand] = notes[i][oct][hand] & ~notes[i][oct][release]
                 }
             }
         }
