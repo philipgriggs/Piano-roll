@@ -4,13 +4,15 @@ import QtMultimedia 5.12
 
 App {
     id: app
-    width: 1600
-    height: 640
+    width: useVideo ? 1920 * 0.85 : 1600
+    height: useVideo ? 1080 * 0.85 : 640
+
+    property bool useVideo: true
 
     property int time: 0
     property int timerInterval
     property int numOctaves: 9
-    property real shortestNote: 0.5 // the shortest note allowed is a quaver
+    property real shortestNote: 0.125 // the shortest note allowed is a demisemiquaver
     property var tempo: {
         "tempos": [],
         "currentIdx": 0,
@@ -23,27 +25,52 @@ App {
     property real keyWidth: app.width / (88 * 7 / 12)
     property real keyHeight: keyWidth * 3
 
+    property string handLeft: "left"
+    property string handRight: "right"
+    property string releaseLeft: "leftRelease"
+    property string releaseRight: "rightRelease"
+
     Rectangle {
         anchors.fill: parent
         color: "white"
+        focus: true
+        Keys.onSpacePressed: {
+            if (playing) {
+                pause()
+            } else {
+                start()
+            }
+        }
+    }
+
+    Video {
+        id: video
+        visible: useVideo
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.top: parent.top
+        anchors.topMargin: -height * 0.05
+        width: parent.width * 0.95
+        height: parent.height
+        source: "../assets/congratulations/congratulations.mov"
     }
 
     Row {
-        anchors.centerIn: parent
+        anchors.horizontalCenter: parent.horizontalCenter
+        anchors.verticalCenter: useVideo ? null : parent.verticalCenter
+        anchors.bottom: useVideo ? parent.bottom : null
+        anchors.bottomMargin: useVideo ? 0.1 * parent.height : 0
         Repeater {
             model: 88 + 9
             Item {
                 id: keyContainer
                 property int octave: Math.floor(index / 12)
                 property bool blackKey: index%12 === 1 || index%12 === 3 || index%12 === 6 || index%12 === 8 || index%12 === 10
-                property int leftKey: 1 << index%12
-                property int rightKey: leftKey << 12
-                property int bothKeys: leftKey | rightKey
-                property bool pressed: (notes[time][octave] & bothKeys) > 0
+                property int key: 1 << index%12
+                property bool pressed: ((notes[time][octave][app.handLeft] | notes[time][octave][app.handRight]) & keyContainer.key) > 0
                 property string normalColor: blackKey ? "black" : "white"
                 property string rightPressedColor: blackKey ? "#8bc1ff" : "#8bc1ff"
                 property string leftPressedColor: blackKey ? "#d08585" : "#d08585"
-                property string pressedColor: loaded && (notes[time][octave] & rightKey) > 0 ? rightPressedColor : leftPressedColor
+                property string pressedColor: loaded && (notes[time][octave][app.handRight] & keyContainer.key) > 0 ? rightPressedColor : leftPressedColor
                 width: blackKey ? 0.001 : keyWidth // if the width is 0, then it is not rendered at all, so make it 0.001
                 height: blackKey ? keyHeight * 0.6 : keyHeight
                 z: blackKey ? 2 : 1
@@ -85,6 +112,7 @@ App {
     }
 
     Icon {
+        visible: !useVideo
         icon: playing ? IconType.pause : IconType.play
         anchors.horizontalCenter: parent.horizontalCenter
         size: 50
@@ -102,7 +130,7 @@ App {
     }
 
     Component.onCompleted: {
-        parseJson("../assets/delusions/delusions_midi_right.json", "../assets/delusions/delusions_midi_left.json")
+        parseJson("../assets/congratulations/congratulations_right.json", "../assets/congratulations/congratulations_left.json")
         // example if there is one file only
 //        parseJson("../assets/delusions/delusions_midi.json", "")
         loaded = true
@@ -110,7 +138,7 @@ App {
 
     MediaPlayer {
         id: track
-        source: "../assets/delusions/delusions.mp3"
+        source: "../assets/congratulations/congratulations.mp3"
     }
 
     Timer {
@@ -121,7 +149,7 @@ App {
         onTriggered: {
             time++
             if(tempo.currentIdx+1 < tempo.tempos.length && time > tempo.tempos[tempo.currentIdx+1].noteIdx) {
-                tempo.currentIdx += 1
+                tempo.currentIdx++
                 tempoChanged()
             }
         }
@@ -130,11 +158,13 @@ App {
     function start() {
         playing = true
         track.play()
+        video.play()
     }
 
     function pause() {
         playing = false
         track.pause()
+        video.pause()
     }
 
     function parseJson(filePathRight, filePathLeft) {
@@ -149,7 +179,7 @@ App {
 
         var ppq = midiRight.header.ppq
 
-        // the number of ticks for one quaver - the smallest duration interval
+        // the number of ticks for one demisemiquaver - the smallest duration interval
         var quaverTicks = ppq * shortestNote
 
         var nNotes = midiRight.tracks[0].notes.length
@@ -163,8 +193,12 @@ App {
         for(var i = 0; i < notes.length; i++) {
             // each item in notes is one octave of notes, and 8 octaves for the whole range of notes
             notes[i] = new Array(numOctaves)
-            for(var j = 0; j < numOctaves; j++) {
-                notes[i][j] = 0
+            for(var oct = 0; oct < numOctaves; oct++) {
+                notes[i][oct] = {}
+                notes[i][oct][app.handLeft] = 0
+                notes[i][oct][app.handRight] = 0
+                notes[i][oct][app.releaseLeft] = 0
+                notes[i][oct][app.releaseRight] = 0
             }
         }
 
@@ -187,6 +221,13 @@ App {
 
     function convertNotes(right, midi, notes, quaverTicks) {
         if(midi.tracks) {
+            var hand = app.handLeft
+            var release = app.releaseLeft
+            if(right) {
+                hand = app.handRight
+                release = app.releaseRight
+            }
+
             for(var i = 0; i < midi.tracks[0].notes.length; i++) {
                 var note = midi.tracks[0].notes[i]
                 var startIdx = Math.round(note.ticks / quaverTicks) + 1
@@ -195,16 +236,40 @@ App {
 
                 // "C" starts at 1 and not 0 (because no note is 0)
                 var key = note.midi % 12
-                if(right) {
-                    key += 12
-                }
 
                 for(var idx = startIdx; idx < endIdx; idx++) {
-                    notes[idx][octave] = notes[idx][octave] | 1<<key
+                    notes[idx][octave][hand] = notes[idx][octave][hand] | 1<<key
+
+                    if (idx === endIdx-1) {
+                        notes[idx][octave][release] = notes[idx][octave][release] | 1<<key
+                    }
+                }                
+            }
+
+            notes = deleteReleasedNotes(notes, right)
+        }
+
+        return notes
+    }
+
+    // if the same note is played twice in successive buckets, then it won't show as being released
+    // so delete successive notes if they are marked with the 'release' flag
+    function deleteReleasedNotes(notes, right) {
+        var hand = app.handLeft
+        var release = app.releaseLeft
+        if(right) {
+            hand = app.handRight
+            release = app.releaseRight
+        }
+        for(var i = 1; i < notes.length - 1; i++) {            
+            for(var oct = 0; oct < numOctaves; oct++) {
+                // if it is the same note 3 buckets in a row and the middle one is a release, then delete the middle note
+                // this is because we don't want to delete a note if it is only 1 interval in duration
+                if((notes[i-1][oct][hand] & notes[i][oct][hand] & notes[i+1][oct][hand] & notes[i][oct][release]) > 0) {
+                    notes[i][oct][hand] = notes[i][oct][hand] & ~notes[i][oct][release]
                 }
             }
         }
-
         return notes
     }
 }
